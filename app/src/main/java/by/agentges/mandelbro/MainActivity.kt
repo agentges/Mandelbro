@@ -12,15 +12,21 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.foundation.AndroidExternalSurface
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.pointerInput
 import by.agentges.mandelbro.ui.theme.MandelbroTheme
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.ceil
@@ -52,15 +58,26 @@ fun Surface.useCanvas(inOutDirty: Rect, block: Canvas.() -> Unit) {
 //val scale = 420_000
 //val ofsx = 0.7467f
 //val ofsy = -0.1025f
-val scale = 2_000_000
-val ofsx = 0.7470f
-val ofsy = -0.1010f
+var slcale = 500_000
+val ofsx :Double = 1.3726414996685
+val ofsy :Double= -0.08599607739010
 
 @Composable
-fun Painting(modifier: Modifier = Modifier) {
+fun Painting(modifier: Modifier = Modifier) {          /*20_000_000_000_000_000.0*/
+    var ss: Double by remember { mutableStateOf(20_00000000000.0) }
+    //var value by remember { mutableStateOf(default) }
+    var job: Job? by remember { mutableStateOf(null) }
     AndroidExternalSurface(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = {
+                        ss = ss * 2
+                        Log.d("tttt", "TAP $ss")
+                        //job?.cancel()
+                    })
+            }
 
     ) {
         // Resources can be initialized/cached here
@@ -71,8 +88,7 @@ fun Painting(modifier: Modifier = Modifier) {
         }
 
 
-        var pointsArray: FloatArray = FloatArray(2 * 1 * 1)
-        var colorsArray: IntArray = IntArray(1 * 1)
+        var colorsArray: IntArray
 
         val paletteSize = 2048
         val palette = IntArray(paletteSize) {
@@ -102,17 +118,13 @@ fun Painting(modifier: Modifier = Modifier) {
             var h = height
             var fullRect = Rect(0, 0, w, h)
             var step = 1
-            var xPoints = w / step + 1
-            var yPoints = h / step + 1
-            var numPoints = xPoints * yPoints
-            pointsArray = FloatArray(2 * numPoints) { 0f }
-            colorsArray = IntArray(numPoints) { 0 }
+
 
             val centerX = w / 2
             val centerY = h / 2
 
 
-            launch {
+            job = launch {
                 withContext(Dispatchers.Default) {
 
                     if (bitmap == null)
@@ -120,92 +132,85 @@ fun Painting(modifier: Modifier = Modifier) {
                     val canvas = Canvas(bitmap!!)
 
                     //Draw iterative points
-                    var sc = 1
-                    step = 512
+                    var pass = 1
+                    step = 256
                     while (step > 2) {
                         val scDoneIn = measureTimeMillis {
-                            xPoints = ceil(w.toFloat() / step - 0.5f).toInt() + 1
-                            yPoints = ceil(h.toFloat() / step - 0.5f).toInt() + 1
-                            numPoints = xPoints * yPoints
-                            pointsArray = FloatArray(2 * numPoints) { 0f }
+                            val xPoints = ceil(w.toFloat() / step - 0.5f).toInt() + 1
+                            val yPoints = ceil(h.toFloat() / step - 0.5f).toInt() + 1
+                            val numPoints = xPoints * yPoints
+                            val pointsArray = FloatArray(2 * numPoints) { 0f }
                             colorsArray = IntArray(numPoints) { 0 }
 
-                            //calculate
-                            fillPoints2(w, h, sc, step, yPoints, xPoints, pointsArray)
+                            //prepare points list
+                            fillPoints2(pass, step, yPoints, xPoints, pointsArray)
 
-                            repeat(yPoints) { y ->
-                                repeat(xPoints) { x ->
-                                    val index = x + y * xPoints
+                            val lineJobs = Array(yPoints) { y ->
+                                launch {
+                                    repeat(xPoints) { x ->
+                                        val index = x + y * xPoints
+                                        val re = (pointsArray[2 * index] - centerX) / ss - ofsx
+                                        val im = (pointsArray[2 * index + 1] - centerY) / (-ss) - ofsy
 
-                                    val re = (pointsArray[2 * index] - centerX) / scale - ofsx
-                                    val im = (pointsArray[2 * index + 1] - centerY) / (-scale) - ofsy
+                                        val maxIterations = paletteB.size
+                                        val iterations =
+                                            countMandelbrotIterations(re, im, maxIterations)
 
-                                    val maxIterations = palette.size
-                                    val iterations =
-                                        countMandelbrotIterations(re, im, maxIterations)
-
-                                    colorsArray[index] = if (iterations == maxIterations) {
-                                        Color.Black.toArgb()
-                                    } else {
-                                        palette[iterations % palette.size]
+                                        colorsArray[index] = if (iterations == maxIterations) {
+                                            Color.Black.toArgb()
+                                        } else {
+                                            paletteB[iterations % paletteB.size]
+                                        }
                                     }
 
+                                    val lPaint = Paint()
 
-                                }
-
-                                //draw
-
-                                repeat(xPoints) { x ->
-                                    val index = x + y * xPoints
-                                    //correct
-                                    linePaint.strokeWidth = when (sc) {
-                                        1 -> step / 1f
-                                        else -> step / 2f
+                                    repeat(xPoints) { x ->
+                                        val index = x + y * xPoints
+                                        //correct
+                                        lPaint.strokeWidth = when (pass) {
+                                            1 -> step / 1f
+                                            else -> step / 2f
+                                        }
+                                        //lPaint.strokeWidth=2f
+                                        lPaint.color = colorsArray[index]
+                                        canvas.drawPoint(
+                                            pointsArray[2 * index],
+                                            pointsArray[2 * index + 1],
+                                            lPaint
+                                        )
                                     }
-
-                                    //experimental
-//                                    linePaint.strokeWidth = 2f
-
-
-                                    linePaint.color = colorsArray[index]
-                                    canvas.drawPoint(
-                                        pointsArray[2 * index],
-                                        pointsArray[2 * index + 1],
-                                        linePaint
-                                    )
                                 }
-
-
                             }
+                            lineJobs.forEach { it.join() }
 
                             //drawPalette(w, h, canvas, palette)
 
                             //update iteration variables
-                            sc++
-                            if (sc > 4 && (sc - 2) % 3 == 0) {
+                            pass++
+                            if (pass > 4 && (pass - 2) % 3 == 0) {
                                 step /= 2
                             }
 
-                            //  delay(500)
+                            // delay(5000)
 
                         }
 
-                        Log.d("tttt", " DoneIn: $scDoneIn ms   NewValues: sc=$sc step=$step")
+                        Log.d("tttt", " DoneIn: $scDoneIn ms   NewValues: sc=$pass step=$step")
                     }
                     Log.d("tttt", "DONE iters")
 
                     ////////////////////////////////////////////////////////////////////////////
 
                     //DRAW each pixel
-                    step = 1
-                    xPoints = w / step + 1
-                    yPoints = h / step + 1
-                    numPoints = xPoints * yPoints
+                    val xPoints = w
+                    val yPoints = h
+                    val numPoints = xPoints * yPoints
                     colorsArray = IntArray(numPoints) { 0 }
 
                     linePaint.strokeWidth = 1f
 
-                    val splitNumY = 7
+                    val splitNumY = 1
                     val tm = measureTimeMillis {
                         repeat(splitNumY) { splitY ->
                             Log.d("tttt", "split ${splitY + 1} of $splitNumY")
@@ -219,17 +224,17 @@ fun Painting(modifier: Modifier = Modifier) {
                                         val x = pX.toFloat() + 0.5f
                                         val y = pY.toFloat() + 0.5f
 
-                                        val re = (x - centerX) / scale - ofsx
-                                        val im = (y - centerY) / (-scale) - ofsy
+                                        val re = (x - centerX) / ss - ofsx
+                                        val im = (y - centerY) / (-ss) - ofsy
 
-                                        val maxIterations = paletteB.size
+                                        val maxIterations = palette.size
                                         val iterations =
                                             countMandelbrotIterations(re, im, maxIterations)
 
                                         colorsArray[index] = if (iterations == maxIterations) {
                                             Color.Black.toArgb()
                                         } else {
-                                            paletteB[iterations % palette.size]
+                                            palette[iterations % palette.size]
                                         }
                                     }
 
@@ -240,7 +245,6 @@ fun Painting(modifier: Modifier = Modifier) {
                                         val index = x + pY * xPoints
 
                                         linePaint.color = colorsArray[index]
-
 
                                         canvas.drawPoint(
                                             x.toFloat() + 0.5f,
@@ -292,13 +296,13 @@ fun Painting(modifier: Modifier = Modifier) {
 }
 
 private fun countMandelbrotIterations(
-    cRe: Float,
-    cIm: Float,
+    cRe: Double,
+    cIm: Double,
     maxIterations: Int,
 ): Int {
     var iterations = 0
-    var zR = cRe.toDouble()
-    var zI = cIm.toDouble()
+    var zR = cRe
+    var zI = cIm
     while (iterations < maxIterations) {
         val zRp = zR
         zR = zRp * zRp - zI * zI + cRe
@@ -333,6 +337,7 @@ fun drawPalette(w: Int, h: Int, canvas: Canvas, palette: IntArray) {
     }
 }
 
+/*
 private fun fillPoints(
     w: Int,
     h: Int,
@@ -381,28 +386,24 @@ private fun fillPoints(
         }
     }
 }
+*/
 
 private fun fillPoints2(
-    w: Int,
-    h: Int,
-    sc: Int,
+    pass: Int,
     step: Int,
     yPoints: Int,
     xPoints: Int,
     pointsArray: FloatArray,
 ) {
-    val shiftx = when (sc) {
+    val shiftx = when (pass) {
         1 -> 0f
-        else -> if ((sc - 1) % 3 == 0) 0f else step / 2f
+        else -> if ((pass - 1) % 3 == 0) 0f else step / 2f
     }
 
-    val shifty = when (sc) {
+    val shifty = when (pass) {
         1 -> 0f
-        else -> if (sc % 3 == 0) 0f else step / 2f
+        else -> if (pass % 3 == 0) 0f else step / 2f
     }
-
-    val centerX = w / 2
-    val centerY = h / 2
 
     repeat(yPoints) { pY ->
         repeat(xPoints) { pX ->
