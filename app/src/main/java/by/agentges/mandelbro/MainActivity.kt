@@ -67,6 +67,9 @@ fun Surface.useCanvas(inOutDirty: Rect, block: Canvas.() -> Unit) {
 //var ofsx: Double by rememberSaveable { mutableStateOf(0.7478316811474198) }
 //var ofsy: Double by rememberSaveable { mutableStateOf(-0.08896944832810841) }
 
+@Volatile
+var tapHandled: Boolean = true
+
 @Composable
 fun Painting(modifier: Modifier = Modifier) {
     var scale: Double by rememberSaveable { mutableStateOf(3182234.8933665487) }
@@ -142,6 +145,13 @@ fun Painting(modifier: Modifier = Modifier) {
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { offset ->
+                        if (!tapHandled) {
+                            Log.d("tttt", "TAP not handled")
+                            return@detectTapGestures
+                        }
+
+
+                        tapHandled = false
                         if (offset.x < w!! / 4 && offset.y > h!! / 4 * 3) {
                             scale /= 1.1
                             Log.d("tttt", "TAP scale:$scale")
@@ -161,6 +171,7 @@ fun Painting(modifier: Modifier = Modifier) {
                             job?.cancel()
                             job?.join()
                             job = launch { drawPicture(canvas, w ?: 0, h ?: 0, scale, ofsx, ofsy, palettes) }
+                            tapHandled = true
                         }
                     })
             }
@@ -229,9 +240,6 @@ suspend fun drawPicture(
 ) {
     withContext(Dispatchers.Default) {
 
-        val centerX = w / 2
-        val centerY = h / 2
-
         //Draw iterative points
         var pass = 1
         var stepSize = 256
@@ -243,14 +251,16 @@ suspend fun drawPicture(
                     launch {
                         // Calculate line colors
                         for (x in 0 until points.xNum) {
-                            if (!isActive) break
+                            if (!isActive) {
+                                //Log.d("tttt", "break 2 Pass=$pass step=$stepSize x=$x y=$y")
+                                break
+                            }
 
                             val pointC = points[x, y]
                             val re = pointC.re
                             val im = pointC.im
 
                             val iterationsPercent = countMandelbrotIterations(re, im)
-                            val index = x + y * points.xNum
                             pointC.color = if (iterationsPercent < 0f) {
                                 Color.Black.toArgb()
                             } else {
@@ -260,25 +270,28 @@ suspend fun drawPicture(
 
 
                         //Draw line
-                        val lPaint = Paint()
-
-                        for (x in 0 until points.xNum) {
-                            if (!isActive) break
-                            val index = x + y * points.xNum
-
-                            lPaint.strokeWidth = when (pass) {
-                                1 -> stepSize / 1f
+                        val lPaint = Paint().apply {
+                            strokeWidth = when (pass) {
+                                1 -> stepSize.toFloat()
                                 else -> stepSize / 2f
                             }
+                        }
+                        for (x in 0 until points.xNum) {
+                            if (!isActive) {
+                                //Log.d("tttt", "break 3 Pass=$pass step=$stepSize x=$x y=$y")
+                                break
+                            }
+                            val pointC = points[x, y]
 
-                            lPaint.color = points[index].color
-                            canvas?.drawPoint(points[index].x, points[index].y, lPaint)
+
+                            lPaint.color = pointC.color
+                            canvas?.drawPoint(pointC.x, pointC.y, lPaint)
                         }
                     }
                 }
                 lineJobs.forEach { it.join() }
             }
-            if (stepSize < 64) {
+            if (stepSize < 256) {
                 Log.d("tttt", "Pass=$pass step=$stepSize>>> DoneIn: $passDuration ms")
             }
             //update iteration variables
@@ -286,7 +299,10 @@ suspend fun drawPicture(
             if (pass > 4 && (pass - 2) % 3 == 0) {
                 stepSize /= 2
             }
-
+            if (!isActive) {
+                Log.d("tttt", "break 4")
+                break
+            }
             //  delay(1000)
         }
         val scaleStr = String.format("%.10f", scale)
@@ -352,7 +368,7 @@ private fun drawGuidelines(
 private fun countMandelbrotIterations(
     cRe: Double,
     cIm: Double,
-    maxIterations: Int = 800,
+    maxIterations: Int = 8000,
 ): Float {
     var iterations = 0
     var zR = cRe
