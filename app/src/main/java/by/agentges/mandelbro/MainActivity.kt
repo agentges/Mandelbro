@@ -32,6 +32,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.ceil
 import kotlin.math.ln
 import kotlin.math.log2
@@ -69,6 +70,12 @@ fun Surface.useCanvas(inOutDirty: Rect, block: Canvas.() -> Unit) {
 
 @Volatile
 var tapHandled: Boolean = true
+
+@Volatile
+var stepRowsDone = AtomicInteger()
+
+@Volatile
+var stepRowsCount = AtomicInteger()
 
 @Composable
 fun Painting(modifier: Modifier = Modifier) {
@@ -247,6 +254,9 @@ suspend fun drawPicture(
             val passDuration = measureTimeMillis {
                 val points = createPointsForPass(w ?: 0, h ?: 0, stepSize, pass, scale, ofsx, ofsy)
 
+                stepRowsCount.set(points.yNum)
+                stepRowsDone.set(0)
+
                 val lineJobs = Array(points.yNum) { y ->
                     launch {
                         // Calculate line colors
@@ -286,6 +296,19 @@ suspend fun drawPicture(
 
                             lPaint.color = pointC.color
                             canvas?.drawPoint(pointC.x, pointC.y, lPaint)
+                        }
+
+
+                        val c = stepRowsDone.incrementAndGet()
+                        val c1 = stepRowsCount.get()
+                        val percent = c.toFloat() / c1
+                        val percentDone: Int = (percent * 100).toInt()
+
+                        val doLog =
+                            ((percent * 1000).toInt() - percentDone * 10) < 1//2 && percentDone % 5 == 0
+
+                        if (doLog) {
+                            Log.d("tttt", "Step $percentDone% ready")
                         }
                     }
                 }
@@ -444,6 +467,7 @@ fun createPointsForPass(
 
 class PassPoints(val xNum: Int, val yNum: Int, private val points: Array<ColoredPoint>) {
     val pointsNumber = xNum * yNum
+    fun size() = pointsNumber
     operator fun get(index: Int): ColoredPoint = points[index]
     operator fun get(ix: Int, iy: Int) = this[ix + iy * xNum]
 }
