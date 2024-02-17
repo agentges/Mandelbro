@@ -29,11 +29,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import by.agentges.mandelbro.ui.theme.MandelbroTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.ceil
+import kotlin.math.ln
+import kotlin.math.log2
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import kotlin.system.measureTimeMillis
@@ -66,16 +67,15 @@ fun Surface.useCanvas(inOutDirty: Rect, block: Canvas.() -> Unit) {
 //var ofsx: Double by rememberSaveable { mutableStateOf(0.7478316811474198) }
 //var ofsy: Double by rememberSaveable { mutableStateOf(-0.08896944832810841) }
 
-
 @Composable
 fun Painting(modifier: Modifier = Modifier) {
-    var scale: Double by rememberSaveable { mutableStateOf(300.0) }
-    var ofsx: Double by rememberSaveable { mutableStateOf(0.5) }
-    var ofsy: Double by rememberSaveable { mutableStateOf(0.0) }
+    var scale: Double by rememberSaveable { mutableStateOf(3182234.8933665487) }
+    var ofsx: Double by rememberSaveable { mutableStateOf(0.7538465530478227) }
+    var ofsy: Double by rememberSaveable { mutableStateOf(-0.049981253510528866) }
     var job: Job? by remember { mutableStateOf(null) }
     val scope = rememberCoroutineScope()
 
-    val palette8 = Palette(2048) { t ->
+    val palette8 = Palette(4096) { t ->
         Color(
             CubicBezierEasing(0.0f, 0.0f, 0.0f, 0.0f).transform(t),
             CubicBezierEasing(0f, 0f, 0.1f, 1f).transform(t),
@@ -83,9 +83,9 @@ fun Painting(modifier: Modifier = Modifier) {
         ).toArgb()
     }
 
-    val pSize = 2048
-    val palettes = Array<Palette>(3) {
-        when(it){
+    val pSize = 10_000
+    val palettes = Array<Palette>(10) {
+        when (it) {
             0 -> Palette(pSize) { t ->
                 Color(
                     CubicBezierEasing(0f, 0f, 0.1f, 1f).transform(t),
@@ -93,20 +93,40 @@ fun Painting(modifier: Modifier = Modifier) {
                     CubicBezierEasing(0.0f, 0.0f, 0.0f, 0.0f).transform(t),
                 ).toArgb()
             }
+
             1 -> Palette(pSize) { t ->
                 Color(
                     CubicBezierEasing(0.0f, 0.0f, 0.0f, 0.0f).transform(t),
-                    CubicBezierEasing(0f, 0f, 0.1f, 1f).transform(t),
+                    CubicBezierEasing(0f, 0.5f, 0.1f, 1f).transform(t),
                     CubicBezierEasing(0.0f, 0.0f, 0.0f, 0.0f).transform(t),
                 ).toArgb()
             }
-            else -> Palette(pSize) { t ->
+
+            2 -> Palette(pSize) { t ->
                 Color(
                     CubicBezierEasing(0.0f, 0.0f, 0.0f, 0.0f).transform(t),
                     CubicBezierEasing(0.0f, 0.0f, 0.0f, 0.0f).transform(t),
                     CubicBezierEasing(0f, 0f, 0.1f, 1f).transform(t),
                 ).toArgb()
             }
+
+            3 -> Palette(pSize) { t ->
+                Color(
+                    1f - t,
+                    1f - t,
+                    1f - t,
+                ).toArgb()
+            }
+
+            4 -> Palette(pSize) { t ->
+                Color.hsv(
+                    t * 360f,
+                    1f,
+                    1f,
+                ).toArgb()
+            }
+
+            else -> Palette(pSize) { Color.Red.toArgb() }
         }
     }
 
@@ -198,7 +218,15 @@ fun Painting(modifier: Modifier = Modifier) {
     }
 }
 
-suspend fun drawPicture(canvas: Canvas?, w: Int, h: Int, scale: Double, ofsx: Double, ofsy: Double, palettes: Array<Palette>) {
+suspend fun drawPicture(
+    canvas: Canvas?,
+    w: Int,
+    h: Int,
+    scale: Double,
+    ofsx: Double,
+    ofsy: Double,
+    palettes: Array<Palette>
+) {
     withContext(Dispatchers.Default) {
 
         val centerX = w / 2
@@ -209,23 +237,24 @@ suspend fun drawPicture(canvas: Canvas?, w: Int, h: Int, scale: Double, ofsx: Do
         var stepSize = 256
         while (stepSize > 2) {
             val passDuration = measureTimeMillis {
-                val points = createPointsForPass(w ?: 0, h ?: 0, stepSize, pass)
-                val colorsArray = IntArray(points.pointsNumber) { 0 }
+                val points = createPointsForPass(w ?: 0, h ?: 0, stepSize, pass, scale, ofsx, ofsy)
 
                 val lineJobs = Array(points.yNum) { y ->
                     launch {
                         // Calculate line colors
                         for (x in 0 until points.xNum) {
-                            if(!isActive) break
-                            val index = x + y * points.xNum
-                            val re = (points[2 * index] - centerX) / scale - ofsx
-                            val im = (points[2 * index + 1] - centerY) / (-scale) - ofsy
+                            if (!isActive) break
+
+                            val pointC = points[x, y]
+                            val re = pointC.re
+                            val im = pointC.im
 
                             val iterationsPercent = countMandelbrotIterations(re, im)
-                            colorsArray[index] = if (iterationsPercent == 1f) {
+                            val index = x + y * points.xNum
+                            pointC.color = if (iterationsPercent < 0f) {
                                 Color.Black.toArgb()
                             } else {
-                                palettes[2][iterationsPercent]
+                                palettes[4][iterationsPercent]
                             }
                         }
 
@@ -234,7 +263,7 @@ suspend fun drawPicture(canvas: Canvas?, w: Int, h: Int, scale: Double, ofsx: Do
                         val lPaint = Paint()
 
                         for (x in 0 until points.xNum) {
-                            if(!isActive) break
+                            if (!isActive) break
                             val index = x + y * points.xNum
 
                             lPaint.strokeWidth = when (pass) {
@@ -242,8 +271,8 @@ suspend fun drawPicture(canvas: Canvas?, w: Int, h: Int, scale: Double, ofsx: Do
                                 else -> stepSize / 2f
                             }
 
-                            lPaint.color = colorsArray[index]
-                            canvas?.drawPoint(points[2 * index], points[2 * index + 1], lPaint)
+                            lPaint.color = points[index].color
+                            canvas?.drawPoint(points[index].x, points[index].y, lPaint)
                         }
                     }
                 }
@@ -317,31 +346,38 @@ private fun drawGuidelines(
 /**
  * Count the number of iterations for a point in the Mandelbrot set.
  * Returns the percentage of iterations that were completed before the point escaped.
- * 1.0 means the point did not escape after maxIterations.
+ * -1.0 means the point did not escape after maxIterations.
  * Other values are the percentage of iterations that were completed before the point escaped.
  */
 private fun countMandelbrotIterations(
     cRe: Double,
     cIm: Double,
-    maxIterations: Int = 2000,
+    maxIterations: Int = 800,
 ): Float {
     var iterations = 0
     var zR = cRe
     var zI = cIm
+    var zAbs: Double = 0.0
     while (iterations < maxIterations) {
         val zRp = zR
         zR = zRp * zRp - zI * zI + cRe
         zI = zRp * zI + zI * zRp + cIm
-        val zAbs: Double = sqrt(zR * zR + zI * zI)
+        zAbs = sqrt(zR * zR + zI * zI)
 
         iterations++
         if (zAbs > 2) {
             break
         }
     }
-    return if (iterations == maxIterations) 1f else iterations.toFloat() / maxIterations
-}
 
+    return if (iterations == maxIterations) {
+        -1f
+    } else {
+        // Normalizing to reduce bands of color
+        val iters = iterations + 1 - ln(log2(zAbs))
+        (iters / maxIterations).toFloat()
+    }
+}
 
 /**
  * Create points for a pass in screen coordinates
@@ -351,12 +387,18 @@ private fun countMandelbrotIterations(
  * @param pass pass number
  * @return array of points
  */
-fun createPointsForPass(w: Int, h: Int, stepSize: Int, pass: Int): PassPoints {
+fun createPointsForPass(
+    w: Int, h: Int, stepSize: Int, pass: Int, scale: Double,
+    ofsx: Double,
+    ofsy: Double,
+): PassPoints {
+
+    val centerX = w / 2
+    val centerY = h / 2
+
     val xPoints = ceil(w.toFloat() / stepSize - 0.5f).toInt() + 1
     val yPoints = ceil(h.toFloat() / stepSize - 0.5f).toInt() + 1
     val numPoints = xPoints * yPoints
-    //Log.d("tttt", "Create points For Pass : $xPoints x $yPoints = $numPoints")
-    val points = FloatArray(2 * numPoints) { 0f }
 
     val shiftx = when (pass) {
         1 -> 0f
@@ -368,25 +410,30 @@ fun createPointsForPass(w: Int, h: Int, stepSize: Int, pass: Int): PassPoints {
         else -> if (pass % 3 == 0) 0f else stepSize / 2f
     }
 
-    repeat(yPoints) { pY ->
-        repeat(xPoints) { pX ->
-            val index = pX + pY * xPoints
-            val x = shiftx + (pX * stepSize).toFloat()
-            val y = shifty + (pY * stepSize).toFloat()
-
-            points[2 * index] = x
-            points[2 * index + 1] = y
-        }
+    val points = Array(2 * numPoints) { index ->
+        val pX = index % xPoints
+        val pY = index / xPoints
+        //make points in screen coordinates
+        val x = shiftx + (pX * stepSize).toFloat()
+        val y = shifty + (pY * stepSize).toFloat()
+        //store points in complex  plane coordinates
+        val re = (x - centerX) / scale - ofsx
+        val im = (y - centerY) / (-scale) - ofsy
+        ColoredPoint(x, y, re, im, 0)
     }
 
     return PassPoints(xPoints, yPoints, points)
 }
 
 
-class PassPoints(val xNum: Int, val yNum: Int, private val points: FloatArray) {
+class PassPoints(val xNum: Int, val yNum: Int, private val points: Array<ColoredPoint>) {
     val pointsNumber = xNum * yNum
-    operator fun get(index: Int): Float = points[index]
+    operator fun get(index: Int): ColoredPoint = points[index]
+    operator fun get(ix: Int, iy: Int) = this[ix + iy * xNum]
 }
+
+data class ColoredPoint(val x: Float, val y: Float, val re: Double, val im: Double, var color: Int)
+
 
 class Palette(size: Int, init: (Float) -> Int) {
 
