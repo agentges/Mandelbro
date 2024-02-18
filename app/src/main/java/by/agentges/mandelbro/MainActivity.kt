@@ -29,8 +29,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import by.agentges.mandelbro.ui.theme.MandelbroTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.newFixedThreadPoolContext
+import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.ceil
@@ -77,11 +80,13 @@ var stepRowsDone = AtomicInteger()
 @Volatile
 var stepRowsCount = AtomicInteger()
 
+//iterative drawing ofsx=0.7371992563215526 ofsy=-0.13215904203621656 scale=37926437.2436581550
+
 @Composable
 fun Painting(modifier: Modifier = Modifier) {
-    var scale: Double by rememberSaveable { mutableStateOf(3182234.8933665487) }
-    var ofsx: Double by rememberSaveable { mutableStateOf(0.7538465530478227) }
-    var ofsy: Double by rememberSaveable { mutableStateOf(-0.049981253510528866) }
+    var ofsx: Double by rememberSaveable { mutableStateOf(0.7371992563215526) }
+    var ofsy: Double by rememberSaveable { mutableStateOf(-0.13215904203621656) }
+    var scale: Double by rememberSaveable { mutableStateOf(37926437.2436581550) }
     var job: Job? by remember { mutableStateOf(null) }
     val scope = rememberCoroutineScope()
 
@@ -175,9 +180,15 @@ fun Painting(modifier: Modifier = Modifier) {
 
 
                         scope.launch {
-                            job?.cancel()
-                            job?.join()
-                            job = launch { drawPicture(canvas, w ?: 0, h ?: 0, scale, ofsx, ofsy, palettes) }
+                            val relaunchJobTime = measureTimeMillis {
+                                Log.d("tttt", "cancel job...")
+                                job?.cancel()
+                                Log.d("tttt", "waiting job...")
+                                job?.join()
+                                Log.d("tttt", "launch job..")
+                                job = launch { drawPicture(canvas, w ?: 0, h ?: 0, scale, ofsx, ofsy, palettes) }
+                            }
+                            Log.d("tttt", "relaunchJobTime: $relaunchJobTime ms")
                             tapHandled = true
                         }
                     })
@@ -249,55 +260,61 @@ suspend fun drawPicture(
 
         //Draw iterative points
         var pass = 1
-        var stepSize = 256
+        var stepSize = 256                  
         while (stepSize > 2) {
             val passDuration = measureTimeMillis {
                 val points = createPointsForPass(w ?: 0, h ?: 0, stepSize, pass, scale, ofsx, ofsy)
+              //  delay(1000)
+               // canvas?.drawColor(Color.Black.toArgb())
 
                 stepRowsCount.set(points.yNum)
                 stepRowsDone.set(0)
 
-                val lineJobs = Array(points.yNum) { y ->
-                    launch {
+                val lineJobs = Array<Job?>(points.yNum) { null }
+
+                for (y in 0 until points.yNum) {
+                    lineJobs[y] = launch {
                         // Calculate line colors
                         for (x in 0 until points.xNum) {
-                            if (!isActive) {
-                                //Log.d("tttt", "break 2 Pass=$pass step=$stepSize x=$x y=$y")
-                                break
-                            }
-
                             val pointC = points[x, y]
                             val re = pointC.re
                             val im = pointC.im
 
                             val iterationsPercent = countMandelbrotIterations(re, im)
-                            pointC.color = if (iterationsPercent < 0f) {
-                                Color.Black.toArgb()
-                            } else {
-                                palettes[4][iterationsPercent]
-                            }
-                        }
+                            pointC.color = iterationsPercent
 
-
-                        //Draw line
-                        val lPaint = Paint().apply {
-                            strokeWidth = when (pass) {
-                                1 -> stepSize.toFloat()
-                                else -> stepSize / 2f
-                            }
-                        }
-                        for (x in 0 until points.xNum) {
                             if (!isActive) {
-                                //Log.d("tttt", "break 3 Pass=$pass step=$stepSize x=$x y=$y")
+                                Log.d("tttt", "break 2 Pass=$pass step=$stepSize x=$x y=$y")
                                 break
                             }
-                            val pointC = points[x, y]
-
-
-                            lPaint.color = pointC.color
-                            canvas?.drawPoint(pointC.x, pointC.y, lPaint)
                         }
 
+                        if (isActive) {
+                            //Draw line
+                            val lPaint = Paint().apply {
+                                strokeWidth = when (pass) {
+                                    1 -> stepSize.toFloat()
+                                    else -> stepSize / 2f
+                                }
+                            }
+                            for (x in 0 until points.xNum) {
+                                val pointC = points[x, y]
+                                lPaint.color = if (pointC.color < 0f) {
+                                    Color.Black.toArgb()
+                                } else {
+                                    palettes[4][pointC.color]
+                                }
+
+                                canvas?.drawPoint(pointC.x, pointC.y, lPaint)
+
+                                if (!isActive) {
+                                    Log.d("tttt", "break 3 Pass=$pass step=$stepSize x=$x y=$y")
+                                    break
+                                }
+                            }
+                        } else {
+                            Log.d("tttt", "break 2.5 no draw Pass=$pass step=$stepSize y=$y")
+                        }
 
                         val c = stepRowsDone.incrementAndGet()
                         val c1 = stepRowsCount.get()
@@ -305,14 +322,18 @@ suspend fun drawPicture(
                         val percentDone: Int = (percent * 100).toInt()
 
                         val doLog =
-                            ((percent * 1000).toInt() - percentDone * 10) < 1//2 && percentDone % 5 == 0
+                            ((percent * 1000).toInt() - percentDone * 10) < 1 && percentDone % 5 == 0
 
                         if (doLog) {
                             Log.d("tttt", "Step $percentDone% ready")
                         }
                     }
+                    if (!isActive) {
+                        Log.d("tttt", "break stop creating jobs Pass=$pass step=$stepSize y=$y of ${points.yNum}")
+                        break
+                    }
                 }
-                lineJobs.forEach { it.join() }
+                lineJobs.forEach { it?.join() }
             }
             if (stepSize < 256) {
                 Log.d("tttt", "Pass=$pass step=$stepSize>>> DoneIn: $passDuration ms")
@@ -333,6 +354,71 @@ suspend fun drawPicture(
         //canvas?.drawColor(Color.Red.toArgb())
 //        drawPalette(w, h, canvas!!, palette)
 //        drawGuidelines(canvas, w, h, centerX, centerY, scale, ofsx, ofsy)
+
+        ////////////////////////////////////////
+        ///DRAW ALL
+        ////////////////////////////////////////
+        val drawAllPoints = true
+
+        if (drawAllPoints) {
+            val centerX = w / 2
+            val centerY = h / 2
+            val xPoints = w + 1
+            val yPoints = h + 1
+            val numPoints = xPoints * yPoints
+            val colorsArray = FloatArray(numPoints) { 0.0f }
+            val pointPaint = Paint().apply { strokeWidth = 1f }
+
+            for (pY in 0 until yPoints) {
+                for (pX in 0 until xPoints) {
+                    val index = pX + pY * xPoints
+
+                    //make points in screen coordinates
+                    val x = pX.toFloat() + 0.0f
+                    val y = pY.toFloat() + 0.5f
+                    //store points in complex  plane coordinates
+                    val re = (x - centerX) / scale - ofsx
+                    val im = (y - centerY) / (-scale) - ofsy
+
+                    val iterationsPercent = countMandelbrotIterations(re, im, 10_000)
+                    colorsArray[index] = iterationsPercent
+                    if (!isActive) {
+                        Log.d("tttt", "break all calc at x=$x y=$pY")
+                        break
+                    }
+                }
+
+                if (!isActive) {
+                    Log.d("tttt", "break all skip draw at y=$pY")
+                    break
+                }
+
+                for (x in 0 until xPoints) {
+                    val index = x + pY * xPoints
+                    pointPaint.color = if (colorsArray[index] < 0f) {
+                        Color.Black.toArgb()
+                    } else {
+                        palettes[3][colorsArray[index]]
+                    }
+
+                    canvas?.drawPoint(
+                        x.toFloat() + 0.5f,
+                        pY.toFloat() + 0.5f,
+                        pointPaint,
+                    )
+                    if (!isActive) {
+                        Log.d("tttt", "break all draw at x=$x y=$pY")
+                        break
+                    }
+                }
+
+                if (!isActive) {
+                    Log.d("tttt", "break all at y=$pY")
+                    break
+                }
+            }
+            Log.d("tttt", "All points drawn")
+        }
     }
 }
 
@@ -391,7 +477,7 @@ private fun drawGuidelines(
 private fun countMandelbrotIterations(
     cRe: Double,
     cIm: Double,
-    maxIterations: Int = 8000,
+    maxIterations: Int = 1_000,
 ): Float {
     var iterations = 0
     var zR = cRe
@@ -458,7 +544,7 @@ fun createPointsForPass(
         //store points in complex  plane coordinates
         val re = (x - centerX) / scale - ofsx
         val im = (y - centerY) / (-scale) - ofsy
-        ColoredPoint(x, y, re, im, 0)
+        ColoredPoint(x, y, re, im, 0.0f)
     }
 
     return PassPoints(xPoints, yPoints, points)
@@ -472,7 +558,15 @@ class PassPoints(val xNum: Int, val yNum: Int, private val points: Array<Colored
     operator fun get(ix: Int, iy: Int) = this[ix + iy * xNum]
 }
 
-data class ColoredPoint(val x: Float, val y: Float, val re: Double, val im: Double, var color: Int)
+/**
+ * Represts a point in the complex plane with a color
+ * @param x x coordinate in screen coordinates
+ * @param y y coordinate in screen coordinates
+ * @param re real part of the complex number
+ * @param im imaginary part of the complex number
+ * @param color color of the point in range 0..1 (-1 means not escaped after maxIterations)
+ */
+data class ColoredPoint(val x: Float, val y: Float, val re: Double, val im: Double, var color: Float)
 
 
 class Palette(size: Int, init: (Float) -> Int) {
