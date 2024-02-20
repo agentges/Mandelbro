@@ -12,7 +12,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.foundation.AndroidExternalSurface
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -155,6 +157,9 @@ fun Painting(modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxSize()
             .pointerInput(Unit) {
+                //detectDragGestures { change, dragAmount ->
+//                    Log.d("tttt", "change: $change dragAmount: $dragAmount")
+//                }
                 detectTapGestures(
                     onTap = { offset ->
                         if (!tapHandled) {
@@ -192,6 +197,7 @@ fun Painting(modifier: Modifier = Modifier) {
                             tapHandled = true
                         }
                     })
+
             }
 
     ) {
@@ -363,8 +369,8 @@ suspend fun drawPicture(
         if (drawAllPoints) {
             val centerX = w / 2
             val centerY = h / 2
-            val xPoints = w + 1
-            val yPoints = h + 1
+            val xPoints = w
+            val yPoints = h
             val numPoints = xPoints * yPoints
             val colorsArray = FloatArray(numPoints) { 0.0f }
             val pointPaint = Paint().apply { strokeWidth = 1f }
@@ -380,7 +386,7 @@ suspend fun drawPicture(
                     val re = (x - centerX) / scale - ofsx
                     val im = (y - centerY) / (-scale) - ofsy
 
-                    val iterationsPercent = countMandelbrotIterations(re, im, 10_000)
+                    val iterationsPercent = countMandelbrotIterations(re, im, 10_00)
                     colorsArray[index] = iterationsPercent
                     if (!isActive) {
                         Log.d("tttt", "break all calc at x=$x y=$pY")
@@ -477,7 +483,7 @@ private fun drawGuidelines(
 private fun countMandelbrotIterations(
     cRe: Double,
     cIm: Double,
-    maxIterations: Int = 1_000,
+    maxIterations: Int = 1_00,
 ): Float {
     var iterations = 0
     var zR = cRe
@@ -564,7 +570,7 @@ class PassPoints(val xNum: Int, val yNum: Int, private val points: Array<Colored
  * @param y y coordinate in screen coordinates
  * @param re real part of the complex number
  * @param im imaginary part of the complex number
- * @param color color of the point in range 0..1 (-1 means not escaped after maxIterations)
+ * @param color color of the point in range 0..1 or -1 (-1 means not escaped after maxIterations)
  */
 data class ColoredPoint(val x: Float, val y: Float, val re: Double, val im: Double, var color: Float)
 
