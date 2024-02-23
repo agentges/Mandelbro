@@ -6,15 +6,13 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.os.Bundle
 import android.util.Log
-import android.view.Surface
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.foundation.AndroidExternalSurface
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -31,38 +29,26 @@ import androidx.compose.ui.input.pointer.pointerInput
 import by.agentges.mandelbro.ui.theme.MandelbroTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.newFixedThreadPoolContext
-import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.ceil
 import kotlin.math.ln
 import kotlin.math.log2
-import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import kotlin.system.measureTimeMillis
 
-class MainActivity : ComponentActivity() {
+class MainActivity : LogActivity() {
+    private val viewModel: ChessViewModel by viewModels()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             MandelbroTheme {
-                Painting()
+                ChessPainting(viewModel)
             }
         }
-    }
-}
-
-fun Surface.useCanvas(inOutDirty: Rect, block: Canvas.() -> Unit) {
-    val canvas = lockCanvas(inOutDirty)
-    try {
-        block(canvas)
-    } finally {
-        unlockCanvasAndPost(canvas)
     }
 }
 
@@ -266,12 +252,12 @@ suspend fun drawPicture(
 
         //Draw iterative points
         var pass = 1
-        var stepSize = 256                  
+        var stepSize = 256
         while (stepSize > 2) {
             val passDuration = measureTimeMillis {
                 val points = createPointsForPass(w ?: 0, h ?: 0, stepSize, pass, scale, ofsx, ofsy)
-              //  delay(1000)
-               // canvas?.drawColor(Color.Black.toArgb())
+                //  delay(1000)
+                // canvas?.drawColor(Color.Black.toArgb())
 
                 stepRowsCount.set(points.yNum)
                 stepRowsDone.set(0)
@@ -556,36 +542,6 @@ fun createPointsForPass(
     return PassPoints(xPoints, yPoints, points)
 }
 
-
-class PassPoints(val xNum: Int, val yNum: Int, private val points: Array<ColoredPoint>) {
-    val pointsNumber = xNum * yNum
-    fun size() = pointsNumber
-    operator fun get(index: Int): ColoredPoint = points[index]
-    operator fun get(ix: Int, iy: Int) = this[ix + iy * xNum]
-}
-
-/**
- * Represts a point in the complex plane with a color
- * @param x x coordinate in screen coordinates
- * @param y y coordinate in screen coordinates
- * @param re real part of the complex number
- * @param im imaginary part of the complex number
- * @param color color of the point in range 0..1 or -1 (-1 means not escaped after maxIterations)
- */
-data class ColoredPoint(val x: Float, val y: Float, val re: Double, val im: Double, var color: Float)
-
-
-class Palette(size: Int, init: (Float) -> Int) {
-
-    private val colors = IntArray(size) {
-        init(it.toFloat() / (size - 1))
-    }
-
-    val size = colors.size
-
-    operator fun get(t: Float) = colors[(t * colors.lastIndex).roundToInt()]
-    operator fun get(index: Int) = colors[index]
-}
 
 fun drawPalette(w: Int, h: Int, canvas: Canvas, palette: Palette) {
 
