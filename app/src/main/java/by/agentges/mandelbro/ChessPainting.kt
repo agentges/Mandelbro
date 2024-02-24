@@ -62,25 +62,24 @@ fun ChessPainting(viewModel: ChessViewModel, modifier: Modifier = Modifier) {
             // Render loop, automatically cancelled on surface destruction
             while (true) {
                 withFrameNanos { _ ->
-
                     surface.useCanvas(viewModel.fullRect) {
                         drawColor(Color.Blue.toArgb())
 
-                        bitmapPaint.color = Color.Cyan.toArgb()
-                        drawRect(viewModel.src, bitmapPaint)
-                        bitmapPaint.color = Color.DarkGray.toArgb()
-                        drawRect(viewModel.dest, bitmapPaint)
+                        synchronized(viewModel) {
+                            bitmapPaint.color = Color.Cyan.toArgb()
+                            drawRect(viewModel.src, bitmapPaint)
+                            bitmapPaint.color = Color.DarkGray.toArgb()
+                            drawRect(viewModel.dest, bitmapPaint)
 
-
-                        viewModel.bitmap?.let { bitmap ->
-                            drawBitmap(
-                                bitmap,
-                                viewModel.src,
-                                viewModel.dest,
-                                bitmapPaint
-                            )
+                            viewModel.bitmap?.let { bitmap ->
+                                drawBitmap(
+                                    bitmap,
+                                    viewModel.src,
+                                    viewModel.dest,
+                                    bitmapPaint
+                                )
+                            }
                         }
-
                     }
                 }
             }

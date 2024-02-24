@@ -11,7 +11,9 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.absoluteValue
@@ -20,18 +22,16 @@ import kotlin.math.roundToInt
 
 class ChessViewModel : ViewModel() {
 
+    private var job: Job? = null
     var offsx = 0f
     var offsy = 0f
     var w: Int = 0
     var h: Int = 0
-    var rect: Rect = Rect()
+
     var fullRect: Rect = Rect()
 
     val src = Rect()
     val dest = Rect()
-
-    private var canvas: Canvas? = null
-    private val dotPaint = Paint()
 
     var bitmap: Bitmap? = null
 
@@ -42,6 +42,7 @@ class ChessViewModel : ViewModel() {
 
     fun onDragEnd() {
         Log.d("tttt", "Drag end")
+        remakeBitmap()
     }
 
     fun onDragCancel() {
@@ -51,14 +52,7 @@ class ChessViewModel : ViewModel() {
     fun onDrag(dragAmount: Offset) {
         offsx += dragAmount.x
         offsy += dragAmount.y
-       // Log.d("tttt", "Offsets $offsx, $offsy")
-        //rect.offsetTo(offsx.roundToInt(), offsy.roundToInt())
-        rect.left = -offsx.roundToInt()
-        rect.top = -offsy.roundToInt()
-        rect.right = (offsx + w!!).roundToInt()
-        rect.bottom = (offsy + h!!).roundToInt()
-//        Log.d("tttt", "New rect: $rect")
-
+        // Log.d("tttt", "Offsets $offsx, $offsy")
         calcRects()
     }
 
@@ -83,25 +77,27 @@ class ChessViewModel : ViewModel() {
     }
 
     fun onSurfaceSizeChanged(newWidth: Int, newHeight: Int) {
-        rect = Rect(0, 0, newWidth, newHeight)
         fullRect = Rect(0, 0, newWidth, newHeight)
-        Log.d("tttt", "THE rect: $rect")
+        Log.d("tttt", "THE rect: $fullRect")
         w = newWidth
         h = newHeight
         calcRects()
 
         if (bitmap != null) return
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.Default) {
             bitmap?.recycle()
             bitmap = null
-            canvas = (bitmap ?: Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)).run {
+            Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).run {
                 bitmap = this
-                Canvas(this)
-
+                val c = Canvas(this)
+                c.drawColor(Color.Black.toArgb())
+                job = launch {
+                    drawChessPicture(c)
+                }
             }
-            drawChessPicture(canvas!!, dotPaint)
         }
     }
+
 
     fun onSurfaceDestroyed() {
         // nothing for now
@@ -114,25 +110,58 @@ class ChessViewModel : ViewModel() {
         bitmap = null
     }
 
+    /**
+     * Create a new bitmap using w and h. Paint current bitmap on it using src and dest.
+     * Recycle the old bitmap.
+     * assign new bitmap to current bitmap.
+     */
+    private fun remakeBitmap() {
+        viewModelScope.launch(Dispatchers.Default) {
+            val currentJob = job
+            currentJob?.cancel()
+            currentJob?.join()
 
+            val newBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            val newCanvas = Canvas(newBitmap)
+            val bitmapPaint = Paint()
+            synchronized(this@ChessViewModel) {
+                bitmap?.let {
+                    newCanvas.drawColor(Color.Yellow.toArgb())
+                    newCanvas.drawBitmap(it, src, dest, bitmapPaint)
+                    it.recycle()
+                }
+                bitmap = newBitmap
+
+                offsx = 0f
+                offsy = 0f
+                calcRects()
+            }
+            job = launch { drawChessPicture(newCanvas) }
+        }
+    }
 }
 
 
-suspend fun drawChessPicture(canvas: Canvas, paint: Paint) {
+suspend fun drawChessPicture(canvas: Canvas) {
     withContext(Dispatchers.Default) {
-        canvas.drawColor(Color.Black.toArgb())
 
+        val paint = Paint()
         paint.color = Color.Red.toArgb()
-        paint.strokeWidth = 128f
+        //paint.strokeWidth = 128f
+        val cellSize = 128f
 
-        repeat(10) {
-            canvas.drawPoint(it * 100f, it * 200f, paint)
-            delay(3000)
+        for (row in 0 until 8) {
+            for (col in 0 until 8) {
+                val isWhite = (row + col) % 2 == 0
+                paint.color = if (isWhite) Color.White.toArgb() else Color.Black.toArgb()
+                canvas.drawRect(
+                    col * cellSize, row * cellSize,
+                    (col + 1) * cellSize, (row + 1) * cellSize, paint
+                )
+                delay(100)
+                if (!isActive) break
+            }
+            if (!isActive) break
         }
-        repeat(10) {
-            canvas.drawPoint(1000 - it * 100f, it * 200f, paint)
-            delay(3000)
-        }
-
     }
 }
