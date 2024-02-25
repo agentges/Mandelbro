@@ -221,29 +221,35 @@ suspend fun drawChessPicture(canvas: Canvas, anchorRect: AnchorRect) {
             val paint = Paint()
             paint.color = Color.Red.toArgb()
 
-            val pointSize = 128f
-            val stepSize = 128f
-            paint.strokeWidth = pointSize
 
-            val xPoints = ceil(anchorRect.rect.width().toFloat() / stepSize - 0.5f).toInt() + 1
-            val yPoints = ceil(anchorRect.rect.height().toFloat() / stepSize - 0.5f).toInt() + 1
+            val pointSize = 64f
+            val stepSize = pointSize
+            val halfStep = stepSize / 2f
+
+            paint.strokeWidth = pointSize
+          //  paint.strokeCap = Paint.Cap.ROUND
+
+            val xPoints = ceil(anchorRect.rect.width().toFloat() / stepSize).toInt()
+            val yPoints = ceil(anchorRect.rect.height().toFloat() / stepSize).toInt()
 
             for (y in 0 until yPoints) {
                 for (x in 0 until xPoints) {
-                    val isWhite = (y + x) % 2 == 0
+                    val isWhite = (y + x) % 2 == 0 && (anchorRect.anchorCorner == RectCorner.TOP_LEFT || anchorRect.anchorCorner == RectCorner.BOTTOM_RIGHT) ||
+                            (y + x) % 2 != 0 && (anchorRect.anchorCorner == RectCorner.TOP_RIGHT || anchorRect.anchorCorner == RectCorner.BOTTOM_LEFT)
+
                     paint.color = if (isWhite) Color.White.toArgb() else Color.Black.toArgb()
 
                     val drawX = when (anchorRect.anchorCorner) {
-                        RectCorner.TOP_RIGHT, RectCorner.BOTTOM_RIGHT -> anchorRect.rect.right - x * stepSize
-                        else -> anchorRect.rect.left + x * stepSize
+                        RectCorner.TOP_RIGHT, RectCorner.BOTTOM_RIGHT -> anchorRect.rect.right - x * stepSize - halfStep
+                        else -> anchorRect.rect.left + x * stepSize + halfStep
                     }
 
                     val drawY = when (anchorRect.anchorCorner) {
-                        RectCorner.BOTTOM_LEFT, RectCorner.BOTTOM_RIGHT -> anchorRect.rect.bottom - y * stepSize
-                        else -> anchorRect.rect.top + y * stepSize
+                        RectCorner.BOTTOM_LEFT, RectCorner.BOTTOM_RIGHT -> anchorRect.rect.bottom - y * stepSize - halfStep
+                        else -> anchorRect.rect.top + y * stepSize + halfStep
                     }
                     canvas.drawPoint(drawX, drawY, paint)
-                    delay(5)
+                    delay(1)
                     yield()   //???
                     if (!isActive) {
                         Log.d("tttt", "Drawing chess board cancelled x")
