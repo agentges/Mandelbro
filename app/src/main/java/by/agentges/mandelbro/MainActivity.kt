@@ -39,13 +39,14 @@ import kotlin.math.sqrt
 import kotlin.system.measureTimeMillis
 
 class MainActivity : LogActivity() {
-    private val viewModel: ChessViewModel by viewModels()
+    //private val viewModel: ChessViewModel by viewModels()
+    private val viewModel: RectViewModel by viewModels()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             MandelbroTheme {
-                ChessPainting(viewModel)
+                RectPainting(viewModel)
             }
         }
     }

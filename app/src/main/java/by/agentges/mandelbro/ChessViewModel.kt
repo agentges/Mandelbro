@@ -209,7 +209,7 @@ class ChessViewModel : ViewModel() {
     }
 }
 
-suspend fun drawChessPicture(canvas: Canvas, anchorRect: AnchorRect) {
+private suspend fun drawChessPicture(canvas: Canvas, anchorRect: AnchorRect) {
     withContext(Dispatchers.Default) {
         try {
             Log.d("tttt", "Start drawing chess board on rect: $anchorRect")
