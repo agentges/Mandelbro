@@ -22,15 +22,17 @@ import kotlin.random.Random
 class RectViewModel : ViewModel() {
 
     private var job: Job? = null
+    val offLock = Object()
     var offsx = 0f
     var offsy = 0f
     var w: Int = 0
     var h: Int = 0
 
+
     var fullRect: Rect = Rect()
 
     val src = Rect()
-    val dest = Rect()
+    val dst = Rect()
 
     var bitmap: Bitmap? = null
 
@@ -47,12 +49,14 @@ class RectViewModel : ViewModel() {
     }
 
     fun onDrag(dragAmount: Offset) {
-        offsx += dragAmount.x
-        offsy += dragAmount.y
-        calcDrawingRects()
+        synchronized(offLock) {
+            offsx += dragAmount.x
+            offsy += dragAmount.y
+            calcBitmapDrawingRects()
+        }
     }
 
-    private fun calcDrawingRects() {
+    private fun calcBitmapDrawingRects() {
         src.set(
             max(0f, -offsx).roundToInt(),
             max(0f, -offsy).roundToInt(),
@@ -60,7 +64,7 @@ class RectViewModel : ViewModel() {
             (max(0f, -offsy) + (h - offsy.absoluteValue)).roundToInt(),
         )
 
-        dest.set(
+        dst.set(
             max(0f, offsx).roundToInt(),
             max(0f, offsy).roundToInt(),
             (max(0f, offsx) + (w - offsx.absoluteValue)).roundToInt(),
@@ -76,7 +80,7 @@ class RectViewModel : ViewModel() {
         fullRect = Rect(0, 0, newWidth, newHeight)
         w = newWidth
         h = newHeight
-        calcDrawingRects()
+        calcBitmapDrawingRects()
 
         if (bitmap != null) return
         viewModelScope.launch(Dispatchers.Default) {
@@ -104,17 +108,78 @@ class RectViewModel : ViewModel() {
     }
 }
 
+fun MutableList<Rect>.addNotEmpty(rect: Rect) {
+    if (rect.isEmpty.not()) {
+        add(rect)
+    }
+}
+
+fun MutableList<Rect>.addIf(rect: Rect, predicate: (Rect) -> Boolean): Boolean {
+    return predicate(rect).also {
+        if (it) {
+            add(rect)
+        }
+    }
+}
 
 private suspend fun rectDraw(canvas: Canvas, rect: Rect) {
-    val paint = Paint().apply {
+    val pointPaint = Paint().apply {
         color = Color.Red.toArgb()
         strokeWidth = 50f
     }
     canvas.drawColor(Color.Blue.toArgb())
-    repeat(1000) {
-        delay(500)
-        val x= Random.nextFloat()*rect.width()
-        val y= Random.nextFloat()*rect.height()
-        canvas.drawPoint(x, y, paint)
+
+    val cx = rect.centerX()
+    val cy = rect.centerY()
+
+
+    val rectPaint = Paint().apply {
+        color = Color.Green.toArgb()
+        strokeWidth = 1f
+        style = Paint.Style.STROKE
     }
+
+
+    val rectSize = 64
+    val rects: MutableList<Rect> = mutableListOf()
+
+    val waveRect = Rect(cx, cy, cx, cy)
+    var rectsCount: Int
+    do {
+        rectsCount = rects.count()
+        waveRect.inset(-rectSize, -rectSize)
+        rectPaint.color = Color.Black.toArgb()
+        canvas.drawRect(waveRect, rectPaint)
+        rectPaint.color = Color.Green.toArgb()
+
+        var x = waveRect.left
+        val predicate: (Rect) -> Boolean = { !it.isEmpty && rect.containsOrIntersects(it) }
+
+        while (x < waveRect.right) {
+            rects.addIf(Rect(x, waveRect.top, x + rectSize, waveRect.top + rectSize), predicate)
+            rects.addIf(Rect(x, waveRect.bottom - rectSize, x + rectSize, waveRect.bottom), predicate)
+            x += rectSize
+        }
+
+        var y = waveRect.top + rectSize
+        while (y < waveRect.bottom - rectSize) {
+            rects.addIf(Rect(waveRect.left, y, waveRect.left + rectSize, y + rectSize), predicate)
+            rects.addIf(Rect(waveRect.right - rectSize, y, waveRect.right, y + rectSize), predicate)
+            y += rectSize
+        }
+    } while (rects.count() > rectsCount)
+
+    rects.forEach {
+        delay(100)
+        canvas.drawRect(it, rectPaint)
+    }
+
+
+}
+
+fun Rect.containsOrIntersects(r: Rect): Boolean {
+    if (isEmpty) return false
+    if (contains(r)) return true
+    if (Rect.intersects(this, r)) return true
+    return false
 }

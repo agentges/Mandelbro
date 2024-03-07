@@ -1,7 +1,6 @@
 package by.agentges.mandelbro
 
 import android.graphics.Paint
-import android.util.Log
 import androidx.compose.foundation.AndroidExternalSurface
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.fillMaxSize
@@ -63,13 +62,13 @@ fun RectPainting(viewModel: RectViewModel, modifier: Modifier = Modifier) {
 
                         synchronized(viewModel) {
                             bitmapPaint.color = Color.DarkGray.toArgb()
-                            drawRect(viewModel.dest, bitmapPaint)
+                            drawRect(viewModel.dst, bitmapPaint)
 
                             viewModel.bitmap?.let { bitmap ->
                                 drawBitmap(
                                     bitmap,
                                     viewModel.src,
-                                    viewModel.dest,
+                                    viewModel.dst,
                                     bitmapPaint
                                 )
                             }
