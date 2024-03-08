@@ -112,7 +112,7 @@ fun RectPainting(viewModel: RectViewModel, modifier: Modifier = Modifier) {
                             viewModel.offsy,
                             viewModel.scale
                         ).let{
-                            "ox: ${viewModel.offsx}, oy: ${viewModel.offsy}, x: ${it.right}, y: ${it.bottom}"
+                            "x: ${it.right}, y: ${it.bottom}"
                         }
 
                         drawText(text, x2.toFloat(), y2.toFloat(), textPaint)

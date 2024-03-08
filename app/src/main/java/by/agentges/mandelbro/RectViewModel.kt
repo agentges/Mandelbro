@@ -51,8 +51,6 @@ class RectViewModel : ViewModel() {
         //apply tile rects to bimap???
 
 
-
-
         //TEST
         val centerX = fullRect.centerX()
         val centerY = fullRect.centerY()
@@ -67,20 +65,19 @@ class RectViewModel : ViewModel() {
         }
 
 
-
-       /* Log.d("tttt", "to cartesian 0 0 1 -1")
-        test5(0, 0)
-        Log.d("tttt", "to cartesian 0 1 1 0")
-        test5(0, 1)
-        Log.d("tttt", "to cartesian 1 0 2 -1")
-        test5(1, 0)
-        Log.d("tttt", "to cartesian 1 1 2 0")
-        test5(1, 1)
-        Log.d("tttt", "to cartesian -1 1 0 0")
-        test5(-1, 1)
-        Log.d("tttt", "to cartesian -1 0 0 -1")
-        test5(-1, 0)
-*/
+        /* Log.d("tttt", "to cartesian 0 0 1 -1")
+         test5(0, 0)
+         Log.d("tttt", "to cartesian 0 1 1 0")
+         test5(0, 1)
+         Log.d("tttt", "to cartesian 1 0 2 -1")
+         test5(1, 0)
+         Log.d("tttt", "to cartesian 1 1 2 0")
+         test5(1, 1)
+         Log.d("tttt", "to cartesian -1 1 0 0")
+         test5(-1, 1)
+         Log.d("tttt", "to cartesian -1 0 0 -1")
+         test5(-1, 0)
+ */
     }
 
     private fun test5(x: Int, y: Int) {
@@ -305,8 +302,8 @@ fun <T> MutableList<T>.addIf(rect: T, predicate: (T) -> Boolean): Boolean {
 
 data class TileRect(val rect: Rect, var color: Color) {
     fun toCartesian(centerX: Int, centerY: Int, offsx: Int, offsy: Int, scale: Int): RectF {
-        val x = (rect.left - centerX + offsx) / scale.toFloat()
-        val y = (rect.top - centerY + offsy) / -scale.toFloat()
+        val x = (rect.left - centerX - offsx) / scale.toFloat()
+        val y = (rect.top - centerY - offsy) / -scale.toFloat()
         val w = rect.width() / scale.toFloat()
         val h = rect.height() / scale.toFloat()
         return RectF(x, y, x + w, y - h)
