@@ -3,9 +3,12 @@ package by.agentges.mandelbro
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Point
+import android.graphics.PointF
 import android.graphics.Rect
 import android.graphics.RectF
 import android.util.Log
+import androidx.annotation.ColorInt
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -21,18 +24,15 @@ import kotlin.math.roundToInt
 
 class RectViewModel : ViewModel() {
 
-    private val tileRectSize = 256
+    private val tileRectSize = 1024
 
     private var job: Job? = null
     val offLock = Object()
     var offsx = 0
     var offsy = 0
-    var scale = 256
-    var w: Int = 0
-    var h: Int = 0
+    var scale = 128
 
-
-    var fullRect: Rect = Rect()
+    val fullRect = Rect()
 
     val src = Rect()
     val dst = Rect()
@@ -49,57 +49,7 @@ class RectViewModel : ViewModel() {
         Log.d("tttt", "Drag end on $offsx, $offsy")
         //recreate bitmap
         //apply tile rects to bimap???
-
-
-        //TEST
-        val centerX = fullRect.centerX()
-        val centerY = fullRect.centerY()
-        tileRects[0].toCartesian(
-            centerX,
-            centerY,
-            offsx,
-            offsy,
-            scale
-        ).let {
-            Log.d("tttt", "tileRects[0].cartesian = $it")
-        }
-
-
-        /* Log.d("tttt", "to cartesian 0 0 1 -1")
-         test5(0, 0)
-         Log.d("tttt", "to cartesian 0 1 1 0")
-         test5(0, 1)
-         Log.d("tttt", "to cartesian 1 0 2 -1")
-         test5(1, 0)
-         Log.d("tttt", "to cartesian 1 1 2 0")
-         test5(1, 1)
-         Log.d("tttt", "to cartesian -1 1 0 0")
-         test5(-1, 1)
-         Log.d("tttt", "to cartesian -1 0 0 -1")
-         test5(-1, 0)
- */
-    }
-
-    private fun test5(x: Int, y: Int) {
-        val centerX = fullRect.centerX()
-        val centerY = fullRect.centerY()
-        val sc = scale.toInt()
-
-        val l = centerX.toInt() + sc * x
-        val t = centerY.toInt() - sc * y
-
-        val tileRect = TileRect(
-            Rect(l, t, l + sc, t + sc),
-            Color.Black
-        )
-        val cartesianRect = tileRect.toCartesian(
-            centerX,
-            centerY,
-            0,
-            0,
-            scale
-        )
-        Log.d("tttt", "cartesianRect = $cartesianRect")
+        logTileRects()
     }
 
     fun onDragCancel() {
@@ -111,54 +61,73 @@ class RectViewModel : ViewModel() {
             offsx += dragAmount.x.roundToInt()
             offsy += dragAmount.y.roundToInt()
             calcBitmapDrawingRects()
-            calcTileRects(dragAmount.x.roundToInt(), dragAmount.y.roundToInt())
+            offsetTileRects(dragAmount.x.roundToInt(), dragAmount.y.roundToInt())
+            recalcTileRects()
         }
     }
 
-    private fun calcTileRects(dx: Int, dy: Int) {
-        tileRects.offset(dx, dy)
-        if (tileRects.union().contains(fullRect)) {
+    private fun offsetTileRects(dx: Int, dy: Int) {
+        tileRects.forEach {
+            it.rect.offset(dx, dy)
+        }
+    }
+
+    private fun logTileRects() {
+        tileRects.forEachIndexed { index, tileRect -> Log.d("tttt", "Tile[$index]: ${tileRect.rect}") }
+    }
+
+    /**
+     * Remove tiles that are not visible
+     * Add new tiles that are visible
+     */
+    private fun recalcTileRects() {
+        val unionRect = tileRects.union()
+
+        if (unionRect.contains(fullRect)) {
             return
         }
 
         var count = tileRects.size
-
-        tileRects.removeAll { fullRect.containsOrIntersects(it.rect).not() }
+        removeInvisibleTileRects()
         val removed = count - tileRects.size
         count = tileRects.size
+
+        //color markers for tests
         tileRects.forEach { it.color = Color.Yellow }
         tileRects.firstOrNull()?.let { it.color = Color.Blue }
+
         createTileRects(
-            initialRect = tileRects.union().let {
-                if (it.isEmpty) Rect(
-                    fullRect.centerX(),
-                    fullRect.centerY(),
-                    fullRect.centerX(),
-                    fullRect.centerY()
-                ) else it
-            },
+            initialRect = if (unionRect.isEmpty)
+                Rect(fullRect.centerX(), fullRect.centerY(), fullRect.centerX(), fullRect.centerY())
+            else
+                unionRect,
             targetRect = fullRect,
             tileSize = tileRectSize
         ).let {
             tileRects.addAll(it)
         }
+
         val added = tileRects.size - count
         Log.d("tttt", "Removed $removed, added $added")
+    }
+
+    private fun removeInvisibleTileRects() {
+        tileRects.removeAll { fullRect.containsOrIntersects(it.rect).not() }
     }
 
     private fun calcBitmapDrawingRects() {
         src.set(
             max(0, -offsx),
             max(0, -offsy),
-            (max(0, -offsx) + (w - offsx.absoluteValue)),
-            (max(0, -offsy) + (h - offsy.absoluteValue)),
+            (max(0, -offsx) + (fullRect.width() - offsx.absoluteValue)),
+            (max(0, -offsy) + (fullRect.height() - offsy.absoluteValue)),
         )
 
         dst.set(
             max(0, offsx),
             max(0, offsy),
-            (max(0, offsx) + (w - offsx.absoluteValue)),
-            (max(0, offsy) + (h - offsy.absoluteValue)),
+            (max(0, offsx) + (fullRect.width() - offsx.absoluteValue)),
+            (max(0, offsy) + (fullRect.height() - offsy.absoluteValue)),
         )
     }
 
@@ -166,18 +135,33 @@ class RectViewModel : ViewModel() {
         onSurfaceSizeChanged(width, height)
     }
 
-    fun onSurfaceSizeChanged(newWidth: Int, newHeight: Int) {
-        fullRect = Rect(0, 0, newWidth, newHeight)
-        w = newWidth
-        h = newHeight
+    fun onSurfaceSizeChanged(newWidth1: Int, newHeight1: Int) {
+
+
+        val newWidth = (newWidth1 * 0.8f).roundToInt()
+        val newHeight = (newHeight1 * 0.8f).roundToInt()
+
+        val x = (newWidth1-newWidth)/2
+        val y = (newHeight1-newHeight)/2
+
+
+        val halfDw = (newWidth - fullRect.width()) / 2
+        val halfDh = (newHeight - fullRect.height()) / 2
+
+        Log.d("tttt", "onSurfaceSizeChanged: $newWidth, $newHeight, halfDw: $halfDw, halfDh: $halfDh")
+
+        fullRect.set(x, y, x+newWidth, y+newHeight)
+        Log.d("tttt", "fullRect: ${fullRect}")
         calcBitmapDrawingRects()
-        calcTileRects(0, 0)
+
+        offsetTileRects(halfDh, halfDw)
+        recalcTileRects()
 
         if (bitmap != null) return
         viewModelScope.launch(Dispatchers.Default) {
             bitmap?.recycle()
             bitmap = null
-            Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).run {
+            Bitmap.createBitmap(fullRect.width(), fullRect.height(), Bitmap.Config.ARGB_8888).run {
                 bitmap = this
                 val canvas = Canvas(this)
                 canvas.drawColor(Color.Black.toArgb())
@@ -196,6 +180,34 @@ class RectViewModel : ViewModel() {
         super.onCleared()
         bitmap?.recycle()
         bitmap = null
+    }
+
+    fun screenRectToCartesian(screenRect: Rect): RectF {
+        val x = (screenRect.left - fullRect.centerX() - offsx) / scale.toFloat()
+        val y = (screenRect.top - fullRect.centerY() - offsy) / -scale.toFloat()
+        val w = screenRect.width() / scale.toFloat()
+        val h = screenRect.height() / scale.toFloat()
+        return RectF(x, y, x + w, y - h)
+    }
+
+    fun cartesianRectToScreen(cartesianRect: RectF): Rect {
+        val x = (cartesianRect.left * scale) + fullRect.centerX() + offsx
+        val y = (cartesianRect.top * -scale) + fullRect.centerY() + offsy
+        val w = (cartesianRect.width() * scale).toInt()
+        val h = (cartesianRect.height() * scale).toInt()
+        return Rect(x.roundToInt(), y.roundToInt(), x.roundToInt() + w, y.roundToInt() + h)
+    }
+
+    fun screenPointToCartesian(screenPoint: Point): PointF {
+        val x = (screenPoint.x - fullRect.centerX() - offsx) / scale.toFloat()
+        val y = (screenPoint.y - fullRect.centerY() - offsy) / -scale.toFloat()
+        return PointF(x, y)
+    }
+
+    fun cartesianPointToScreen(cartesianPoint: PointF): Point {
+        val x = (cartesianPoint.x * scale) + fullRect.centerX() + offsx
+        val y = (cartesianPoint.y * -scale) + fullRect.centerY() + offsy
+        return Point(x.roundToInt(), y.roundToInt())
     }
 }
 
@@ -224,7 +236,7 @@ private suspend fun rectDraw(canvas: Canvas, rect: Rect, tileSize: Int) {
         createTileRects(waveRect, rect, tileSize).map { it.rect }
     )
     rects.forEach {
-        delay(100)
+        delay(200)
         canvas.drawRect(it, rectPaint)
     }
 
@@ -270,18 +282,11 @@ private fun createTileRects(initialRect: Rect, targetRect: Rect, tileSize: Int):
     return result
 }
 
-
 fun Rect.containsOrIntersects(r: Rect): Boolean {
     if (isEmpty) return false
     if (contains(r)) return true
     if (Rect.intersects(this, r)) return true
     return false
-}
-
-fun List<TileRect>.offset(x: Int, y: Int) {
-    this.forEach {
-        it.rect.offset(x, y)
-    }
 }
 
 fun List<TileRect>.union(): Rect {
@@ -301,11 +306,70 @@ fun <T> MutableList<T>.addIf(rect: T, predicate: (T) -> Boolean): Boolean {
 }
 
 data class TileRect(val rect: Rect, var color: Color) {
-    fun toCartesian(centerX: Int, centerY: Int, offsx: Int, offsy: Int, scale: Int): RectF {
-        val x = (rect.left - centerX - offsx) / scale.toFloat()
-        val y = (rect.top - centerY - offsy) / -scale.toFloat()
-        val w = rect.width() / scale.toFloat()
-        val h = rect.height() / scale.toFloat()
-        return RectF(x, y, x + w, y - h)
+    fun draw(canvas: Canvas, restoreablePaint: RestoreablePaint) {
+        restoreablePaint.usePaint(
+            color = color.toArgb(),
+        ) {
+            canvas.drawRect(rect, it)
+            canvas.drawCircle(rect.centerX().toFloat(), rect.centerY().toFloat(), rect.width() / 2f, it)
+        }
     }
+}
+
+
+/**
+ * A class to save and restore paint parameters
+ */
+class RestoreablePaint(private val paint: Paint) {
+
+    @ColorInt
+    private var oldColor: Int = paint.color
+    private var oldStrokeWidth: Float = paint.strokeWidth
+    private var oldStyle: Paint.Style = paint.style
+
+    fun usePaint(
+        @ColorInt color: Int = paint.color,
+        strokeWidth: Float = paint.strokeWidth,
+        style: Paint.Style = paint.style,
+        block: (Paint) -> Unit
+    ) {
+        savePaintParams()
+        try {
+            setPaintParams(color, strokeWidth, style)
+            block(paint)
+        } finally {
+            restorePaintParams()
+        }
+    }
+
+    private fun setPaintParams(@ColorInt color: Int, strokeWidth: Float, style: Paint.Style) {
+        paint.color = color
+        paint.strokeWidth = strokeWidth
+        paint.style = style
+    }
+
+    private fun restorePaintParams() {
+        paint.color = oldColor
+        paint.strokeWidth = oldStrokeWidth
+        paint.style = oldStyle
+    }
+
+    private fun savePaintParams() {
+        oldColor = paint.color
+        oldStrokeWidth = paint.strokeWidth
+        oldStyle = paint.style
+    }
+
+}
+
+fun Paint.use(
+    @ColorInt color: Int = this.color,
+    strokeWidth: Float = this.strokeWidth,
+    style: Paint.Style = this.style,
+    block: (Paint) -> Unit
+) {
+    this.color = color
+    this.strokeWidth = strokeWidth
+    this.style = style
+    block(this)
 }

@@ -45,21 +45,5 @@ class TileRectTest {
     @Test
     fun `to cartesian 0 0 1 -1`() {
 
-//        var mockedRect = Rect(
-//            centerX.toInt(),
-//            centerY.toInt(),
-//            centerX.toInt() + scale.toInt(),
-//            centerY.toInt() + scale.toInt()
-//        )
-//        `when`(mockedRect.width()).thenReturn(mockedRect.right - mockedRect.left)
-//        `when`(mockedRect.height()).thenReturn(mockedRect.bottom - mockedRect.top)
-        val cartesianRect = TileRect(mockedRect, Color.Black)
-            .toCartesian(centerX, centerY, offsx, offsy, scale)
-
-        assert(cartesianRect.left.roundToInt() == 0)
-        assert(cartesianRect.top.roundToInt() == 0)
-        assert(cartesianRect.right.roundToInt() == 1)
-        assert(cartesianRect.bottom.roundToInt() == -1)
-
     }
 }

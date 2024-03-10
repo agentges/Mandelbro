@@ -1,6 +1,8 @@
 package by.agentges.mandelbro
 
 import android.graphics.Paint
+import android.graphics.PointF
+import android.util.Log
 import androidx.compose.foundation.AndroidExternalSurface
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,14 +40,16 @@ fun RectPainting(viewModel: RectViewModel, modifier: Modifier = Modifier) {
     ) {
         // Resources can be initialized/cached here
         val bitmapPaint = Paint()
-        val rectPaint = Paint().apply {
-            color = Color.Yellow.toArgb()
-            strokeWidth = 1f
-            style = Paint.Style.STROKE
-        }
+        val rectPaint = RestoreablePaint(
+            Paint().apply {
+                color = Color.Yellow.toArgb()
+                strokeWidth = 1f
+                style = Paint.Style.STROKE
+            }
+        )
         val textPaint = Paint().apply {
             color = Color.White.toArgb()
-            textSize = 48f
+            textSize = 24f
         }
 
         // A surface is available, we can start rendering
@@ -66,76 +70,64 @@ fun RectPainting(viewModel: RectViewModel, modifier: Modifier = Modifier) {
             // Render loop, automatically cancelled on surface destruction
             while (true) {
                 withFrameNanos { _ ->
-                    surface.useCanvas(viewModel.fullRect) {
+                    surface.useCanvas(null) {
                         drawColor(Color.Black.toArgb())
 
+                        //draw full rect
+                        rectPaint.usePaint(
+                            color = Color.White.toArgb(),
+                            strokeWidth = 10f
+                        ) { paint ->
+                            drawRect(viewModel.fullRect, paint)
+                        }
+
                         //draw x axis
-                        rectPaint.color = Color.Red.toArgb()
-                        rectPaint.strokeWidth = 16f
-                        drawLine(
-                            0f,
-                            viewModel.h / 2f + viewModel.offsy,
-                            viewModel.w.toFloat(),
-                            viewModel.h / 2f + viewModel.offsy,
-                            rectPaint
-                        )
-                        //draw y axis
-                        drawLine(
-                            viewModel.w / 2f + viewModel.offsx,
-                            0f,
-                            viewModel.w / 2f + viewModel.offsx,
-                            viewModel.h.toFloat(),
-                            rectPaint
-                        )
-
-                        //draw first tile rect
-                        rectPaint.style = Paint.Style.FILL
-
-                        drawRect(viewModel.tileRects[0].rect, rectPaint)
-                        rectPaint.strokeWidth = 1f
-                        rectPaint.style = Paint.Style.STROKE
-
-
-
-                        //Draw text 1
-                        val x = viewModel.tileRects[0].rect.left
-                        val y = viewModel.tileRects[0].rect.top
-                        drawText("x: $x, y: $y", x.toFloat(), y.toFloat(), textPaint)
-
-                        //Draw text 2
-                        val x2 = viewModel.tileRects[0].rect.right
-                        val y2 = viewModel.tileRects[0].rect.bottom
-                        val text = viewModel.tileRects[0].toCartesian(
-                            viewModel.fullRect.centerX(),
-                            viewModel.fullRect.centerY(),
-                            viewModel.offsx,
-                            viewModel.offsy,
-                            viewModel.scale
-                        ).let{
-                            "x: ${it.right}, y: ${it.bottom}"
+                        rectPaint.usePaint(
+                            color = Color.Red.toArgb(),
+                            strokeWidth = 16f
+                        ) {
+                            drawLine(
+                                viewModel.fullRect.left.toFloat(),
+                                viewModel.fullRect.centerY() + viewModel.offsy.toFloat(),
+                                viewModel.fullRect.left + viewModel.fullRect.width().toFloat(),
+                                viewModel.fullRect.centerY() + viewModel.offsy.toFloat(),
+                                it
+                            )
+                            //draw y axis
+                            drawLine(
+                                viewModel.fullRect.centerX() + viewModel.offsx.toFloat(),
+                                viewModel.fullRect.top.toFloat(),
+                                viewModel.fullRect.centerX() + viewModel.offsx.toFloat(),
+                                viewModel.fullRect.top + viewModel.fullRect.height().toFloat(),
+                                it
+                            )
                         }
-
-                        drawText(text, x2.toFloat(), y2.toFloat(), textPaint)
-
-
-                        viewModel.tileRects[0].toCartesian(
-                            viewModel.fullRect.centerX(),
-                            viewModel.fullRect.centerY(),
-                            viewModel.offsx,
-                            viewModel.offsy,
-                            viewModel.scale
-                        ).let {
-                            // Log.d("RectPainting", "tileRects[0] = $it")
-                        }
-
-
 
 
                         //draw all tile rects
                         viewModel.tileRects.forEach { tile ->
-                            rectPaint.color = tile.color.toArgb()
-                            drawRect(tile.rect, rectPaint)
+                            tile.draw(this, rectPaint)
+                            drawText(
+                                viewModel.screenRectToCartesian(tile.rect)
+                                    .let { "${it.left.toFloat()}, ${it.top.toFloat()}" },
+                                tile.rect.left.toFloat(),
+                                tile.rect.top.toFloat(),
+                                textPaint
+                            )
                         }
+
+                        rectPaint.usePaint(
+                            color = Color.Green.toArgb(),
+                            strokeWidth = 32f
+                        ) { paint ->
+                            repeat(21) { step ->
+                                viewModel.cartesianPointToScreen(PointF((step - 10).toFloat(), (step - 10).toFloat()))
+                                    .let { point ->
+                                        drawPoint(point.x.toFloat(), point.y.toFloat(), paint)
+                                    }
+                            }
+                        }
+
 
                         /*
                                                 synchronized(viewModel) {
@@ -152,6 +144,7 @@ fun RectPainting(viewModel: RectViewModel, modifier: Modifier = Modifier) {
                                                     }
                                                 }
                         */
+
                     }
                 }
             }
