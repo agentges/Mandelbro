@@ -24,7 +24,7 @@ import kotlin.math.roundToInt
 
 class RectViewModel : ViewModel() {
 
-    private val tileRectSize = 1024
+    private val tileRectSize = 128
 
     private var job: Job? = null
     val offLock = Object()
@@ -49,6 +49,7 @@ class RectViewModel : ViewModel() {
         Log.d("tttt", "Drag end on $offsx, $offsy")
         //recreate bitmap
         //apply tile rects to bimap???
+
         logTileRects()
     }
 
@@ -135,27 +136,21 @@ class RectViewModel : ViewModel() {
         onSurfaceSizeChanged(width, height)
     }
 
-    fun onSurfaceSizeChanged(newWidth1: Int, newHeight1: Int) {
+    fun onSurfaceSizeChanged(newWidth: Int, newHeight: Int) {
 
+        val oldRect = Rect(fullRect)
 
-        val newWidth = (newWidth1 * 0.8f).roundToInt()
-        val newHeight = (newHeight1 * 0.8f).roundToInt()
+        fullRect.set(0, 0,   newWidth,  newHeight)
+        // reduce fullRect a bit just for test purposes
+        fullRect.inset(fullRect.width() / 8, fullRect.height() / 8)
 
-        val x = (newWidth1-newWidth)/2
-        val y = (newHeight1-newHeight)/2
+        val centerOffsetX = fullRect.centerX() - oldRect.centerX()
+        val centerOffsetY = fullRect.centerY() - oldRect.centerY()
 
-
-        val halfDw = (newWidth - fullRect.width()) / 2
-        val halfDh = (newHeight - fullRect.height()) / 2
-
-        Log.d("tttt", "onSurfaceSizeChanged: $newWidth, $newHeight, halfDw: $halfDw, halfDh: $halfDh")
-
-        fullRect.set(x, y, x+newWidth, y+newHeight)
-        Log.d("tttt", "fullRect: ${fullRect}")
-        calcBitmapDrawingRects()
-
-        offsetTileRects(halfDh, halfDw)
+        offsetTileRects(centerOffsetX, centerOffsetY)
         recalcTileRects()
+
+        calcBitmapDrawingRects()
 
         if (bitmap != null) return
         viewModelScope.launch(Dispatchers.Default) {
