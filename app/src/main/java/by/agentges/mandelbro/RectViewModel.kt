@@ -16,9 +16,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.absoluteValue
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -38,6 +38,8 @@ class RectViewModel : ViewModel() {
     val dst = Rect()
 
     var bitmap: Bitmap? = null
+    var oldBitmapRect = Rect()
+    var bitmapRect = Rect()
 
     val tileRects = mutableListOf<TileRect>()
 
@@ -47,10 +49,13 @@ class RectViewModel : ViewModel() {
 
     fun onDragEnd() {
         Log.d("tttt", "Drag end on $offsx, $offsy")
-        //recreate bitmap
-        //apply tile rects to bimap???
 
-        logTileRects()
+        recalculateBitmapRect()
+
+        //recreate bitmap
+        remakeBitmap()
+
+        //apply tile rects to bimap???
     }
 
     fun onDragCancel() {
@@ -59,10 +64,13 @@ class RectViewModel : ViewModel() {
 
     fun onDrag(dragAmount: Offset) {
         synchronized(offLock) {
-            offsx += dragAmount.x.roundToInt()
-            offsy += dragAmount.y.roundToInt()
+            val dx = dragAmount.x.roundToInt()
+            val dy = dragAmount.y.roundToInt()
+            offsx += dx
+            offsy += dy
+            bitmapRect.offset(dx, dy)
             calcBitmapDrawingRects()
-            offsetTileRects(dragAmount.x.roundToInt(), dragAmount.y.roundToInt())
+            offsetTileRects(dx, dy)
             recalcTileRects()
         }
     }
@@ -71,10 +79,6 @@ class RectViewModel : ViewModel() {
         tileRects.forEach {
             it.rect.offset(dx, dy)
         }
-    }
-
-    private fun logTileRects() {
-        tileRects.forEachIndexed { index, tileRect -> Log.d("tttt", "Tile[$index]: ${tileRect.rect}") }
     }
 
     /**
@@ -117,19 +121,86 @@ class RectViewModel : ViewModel() {
     }
 
     private fun calcBitmapDrawingRects() {
+        val srcX = max(0, fullRect.left - bitmapRect.left)
+        val srcY = max(0, fullRect.top - bitmapRect.top)
+
+        val intersectionRect = Rect().apply {
+            setIntersect(bitmapRect, fullRect)
+        }
+        val srcW = intersectionRect.width()
+        val srcH = intersectionRect.height()
+
         src.set(
-            max(0, -offsx),
-            max(0, -offsy),
-            (max(0, -offsx) + (fullRect.width() - offsx.absoluteValue)),
-            (max(0, -offsy) + (fullRect.height() - offsy.absoluteValue)),
+            srcX,
+            srcY,
+            srcX + srcW,
+            srcY + srcH,
         )
 
+        val dstX = max(0, bitmapRect.left - fullRect.left) + fullRect.left
+        val dstY = max(0, bitmapRect.top - fullRect.top) + fullRect.top
+
         dst.set(
-            max(0, offsx),
-            max(0, offsy),
-            (max(0, offsx) + (fullRect.width() - offsx.absoluteValue)),
-            (max(0, offsy) + (fullRect.height() - offsy.absoluteValue)),
+            dstX,
+            dstY,
+            dstX + srcW,
+            dstY + srcH,
         )
+    }
+
+    /**
+     * Create a new bitmap using bitmapRect. Paint current bitmap on it using src and dest.
+     * Recycle the old bitmap.
+     * assign new bitmap to current bitmap.
+     */
+    private fun remakeBitmap() {
+        viewModelScope.launch(Dispatchers.Default) {
+            job?.cancelAndJoin()
+
+            ////
+
+            val srcX = max(0, bitmapRect.left - oldBitmapRect.left)
+            val srcY = max(0, bitmapRect.top - oldBitmapRect.top)
+
+            val intersectionRect = Rect().apply {
+                setIntersect(oldBitmapRect, bitmapRect)
+            }
+            val srcW = intersectionRect.width()
+            val srcH = intersectionRect.height()
+
+            val dstX = max(0, oldBitmapRect.left - bitmapRect.left)
+            val dstY = max(0, oldBitmapRect.top - bitmapRect.top)
+
+            val bSrc = Rect(srcX, srcY, srcX + srcW, srcY + srcH)
+            val bDst = Rect(dstX, dstY, dstX + srcW, dstY + srcH)
+
+
+            // log oldbitmaprect, bitmap rect, bsrc, bdst
+            Log.d("tttt", "oldBitmapRect: $oldBitmapRect bitmapRect: $bitmapRect bSrc: $bSrc bDst: $bDst")
+
+
+            ////
+
+
+            val newBitmap = Bitmap.createBitmap(bitmapRect.width(), bitmapRect.height(), Bitmap.Config.ARGB_8888)
+            val newCanvas = Canvas(newBitmap)
+            val bitmapPaint = Paint()
+            synchronized(this@RectViewModel) {
+                bitmap?.let {
+                    //  newCanvas.drawColor(Color.Yellow.toArgb())
+                    newCanvas.drawBitmap(it, bSrc, bDst, bitmapPaint)
+                    it.recycle()
+                }
+                bitmap = newBitmap
+
+                calcBitmapDrawingRects()
+            }
+
+            val tileRectsToDraw = createTileRectsToDraw()
+            job = launch {
+                rectDraw(newCanvas, bitmapRect, tileRectsToDraw)
+            }
+        }
     }
 
     fun onSurfaceCreated(width: Int, height: Int) {
@@ -140,7 +211,7 @@ class RectViewModel : ViewModel() {
 
         val oldRect = Rect(fullRect)
 
-        fullRect.set(0, 0,   newWidth,  newHeight)
+        fullRect.set(0, 0, newWidth, newHeight)
         // reduce fullRect a bit just for test purposes
         fullRect.inset(fullRect.width() / 8, fullRect.height() / 8)
 
@@ -150,21 +221,35 @@ class RectViewModel : ViewModel() {
         offsetTileRects(centerOffsetX, centerOffsetY)
         recalcTileRects()
 
+        recalculateBitmapRect()
         calcBitmapDrawingRects()
 
         if (bitmap != null) return
         viewModelScope.launch(Dispatchers.Default) {
             bitmap?.recycle()
             bitmap = null
-            Bitmap.createBitmap(fullRect.width(), fullRect.height(), Bitmap.Config.ARGB_8888).run {
+            Bitmap.createBitmap(bitmapRect.width(), bitmapRect.height(), Bitmap.Config.ARGB_8888).run {
                 bitmap = this
                 val canvas = Canvas(this)
                 canvas.drawColor(Color.Black.toArgb())
+                val tileRectsToDraw = createTileRectsToDraw()
                 job = launch {
-                    rectDraw(canvas, fullRect, tileRectSize)
+                    rectDraw(canvas, bitmapRect, tileRectsToDraw)
                 }
             }
         }
+    }
+
+    private fun createTileRectsToDraw(): List<TileRect> {
+        val tileRectsToDraw = tileRects.filter { bitmapRect.containsOrIntersects(it.rect) }
+            .map { TileRect(Rect(it.rect), it.color) }
+            .onEach { it.rect.offset(-bitmapRect.left, -bitmapRect.top) }
+        return tileRectsToDraw
+    }
+
+    private fun recalculateBitmapRect() {
+        oldBitmapRect = bitmapRect
+        bitmapRect = tileRects.filter { fullRect.containsOrIntersects(it.rect) }.union()
     }
 
     fun onSurfaceDestroyed() {
@@ -175,6 +260,15 @@ class RectViewModel : ViewModel() {
         super.onCleared()
         bitmap?.recycle()
         bitmap = null
+    }
+
+    /**
+     * Convert rect in BitmapRect coordinates to screen rect coordinates
+     */
+    fun bitmapRectToScreen(bRect: Rect): Rect {
+        return Rect(bRect).apply {
+            offset(bitmapRect.left, bitmapRect.top)
+        }
     }
 
     fun screenRectToCartesian(screenRect: Rect): RectF {
@@ -206,41 +300,35 @@ class RectViewModel : ViewModel() {
     }
 }
 
-private suspend fun rectDraw(canvas: Canvas, rect: Rect, tileSize: Int) {
+private suspend fun rectDraw(canvas: Canvas, rect: Rect, tileRects: List<TileRect>) {
     val pointPaint = Paint().apply {
-        color = Color.Red.toArgb()
-        strokeWidth = 50f
+        color = Color.Red.copy(alpha=0.1f).toArgb()
+        strokeWidth = 16f
     }
-    canvas.drawColor(Color.Blue.toArgb())
 
-    val cx = rect.centerX()
-    val cy = rect.centerY()
-
-
-    val rectPaint = Paint().apply {
-        color = Color.Green.toArgb()
-        strokeWidth = 1f
-        style = Paint.Style.STROKE
+    val textPaint = Paint().apply {
+        color = Color.White.toArgb()
+        textSize = 32f
     }
 
 
-    val rects: MutableList<Rect> = mutableListOf()
 
-    val waveRect = Rect(cx, cy, cx, cy)
-    rects.addAll(
-        createTileRects(waveRect, rect, tileSize).map { it.rect }
-    )
-    rects.forEach {
-        delay(200)
-        canvas.drawRect(it, rectPaint)
+    tileRects.forEach {
+        delay(20)
+        //canvas.drawPoint(it.rect.left.toFloat(), it.rect.top.toFloat(), pointPaint)
+        canvas.drawCircle(it.rect.centerX().toFloat(), it.rect.centerY().toFloat(), it.rect.width() / 2f, pointPaint)
+
+        //bitmapRectToScreen()
+        Rect(it.rect).apply { offset(rect.left, rect.top) }
+        
+        val s = "\uD83D\uDE0E"
+        canvas.drawText(s, it.rect.centerX().toFloat(), it.rect.centerY().toFloat(), textPaint)
     }
-
-
 }
 
 private fun createTileRects(initialRect: Rect, targetRect: Rect, tileSize: Int): List<TileRect> {
     val result = mutableListOf<TileRect>()
-    val waveRect = initialRect
+    val waveRect = Rect(initialRect)
     var rectsCount: Int
     do {
         rectsCount = result.count()
@@ -278,10 +366,12 @@ private fun createTileRects(initialRect: Rect, targetRect: Rect, tileSize: Int):
 }
 
 fun Rect.containsOrIntersects(r: Rect): Boolean {
-    if (isEmpty) return false
-    if (contains(r)) return true
-    if (Rect.intersects(this, r)) return true
-    return false
+    return when {
+        isEmpty -> false
+        contains(r) -> true
+        Rect.intersects(this, r) -> true
+        else -> false
+    }
 }
 
 fun List<TileRect>.union(): Rect {
@@ -315,6 +405,7 @@ data class TileRect(val rect: Rect, var color: Color) {
 /**
  * A class to save and restore paint parameters
  */
+@Deprecated("Use Paint.use instead")
 class RestoreablePaint(private val paint: Paint) {
 
     @ColorInt
@@ -354,7 +445,6 @@ class RestoreablePaint(private val paint: Paint) {
         oldStrokeWidth = paint.strokeWidth
         oldStyle = paint.style
     }
-
 }
 
 fun Paint.use(

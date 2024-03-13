@@ -2,7 +2,6 @@ package by.agentges.mandelbro
 
 import android.graphics.Paint
 import android.graphics.PointF
-import android.util.Log
 import androidx.compose.foundation.AndroidExternalSurface
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.fillMaxSize
@@ -107,13 +106,15 @@ fun RectPainting(viewModel: RectViewModel, modifier: Modifier = Modifier) {
                         //draw all tile rects
                         viewModel.tileRects.forEach { tile ->
                             tile.draw(this, rectPaint)
-                            drawText(
-                                viewModel.screenRectToCartesian(tile.rect)
-                                    .let { "${it.left.toFloat()}, ${it.top.toFloat()}" },
-                                tile.rect.left.toFloat(),
-                                tile.rect.top.toFloat(),
-                                textPaint
-                            )
+                            /*
+                                                        drawText(
+                                                            viewModel.screenRectToCartesian(tile.rect)
+                                                                .let { "${it.left.toFloat()}, ${it.top.toFloat()}" },
+                                                            tile.rect.left.toFloat(),
+                                                            tile.rect.top.toFloat(),
+                                                            textPaint
+                                                        )
+                            */
                         }
 
                         rectPaint.usePaint(
@@ -128,8 +129,17 @@ fun RectPainting(viewModel: RectViewModel, modifier: Modifier = Modifier) {
                             }
                         }
 
+                        //draw bitmap rect
+                        rectPaint.usePaint(
+                            color = Color.Blue.toArgb(),
+                            strokeWidth = 4f
+                        ) { paint ->
+                            drawRect(viewModel.bitmapRect, paint)
+                        }
 
-                        /*
+
+                        //draw bitmap
+
                                                 synchronized(viewModel) {
                                                     bitmapPaint.color = Color.DarkGray.toArgb()
                                                     drawRect(viewModel.dst, bitmapPaint)
@@ -143,7 +153,8 @@ fun RectPainting(viewModel: RectViewModel, modifier: Modifier = Modifier) {
                                                         )
                                                     }
                                                 }
-                        */
+                        
+
 
                     }
                 }
